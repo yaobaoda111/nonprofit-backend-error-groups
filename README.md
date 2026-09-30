@@ -1,17 +1,17 @@
 # Group nonprofit backend errors by the work that failed
 
-I built this to settle a question fast: when a backend job fails, do we group by the work that broke or by the request that triggered it? So I ran the decision test first.
+Run the focused decision test first:
 
 ```bash
 python -m pip install -r requirements.txt
 pytest -q
 ```
 
-The test fires a `donor_receipt` failure for `render_tax_receipt`. What you want back is a `captured` decision keyed on `nonprofit-backend / donor_receipt / render_tax_receipt`, with the job request ID acting as the idempotency key. Took me an afternoon to wire the harness.
+The test sends a `donor_receipt` failure for `render_tax_receipt`. The expected result is a `captured` decision with the grouping key `nonprofit-backend / donor_receipt / render_tax_receipt`, and the job request ID becomes the idempotency key.
 
 ## Send a backend failure
 
-Infrai gives this service one API and a single `INFRAI_API_KEY` for capture plus the other backend capabilities, so the integration is a plain REST call from any language with no SDK to install. That saved me a day of dependency hell.
+Infrai gives this service one API and a single `INFRAI_API_KEY` for capture and the other backend capabilities, so the integration stays a plain REST call with no SDK to install.
 
 ```bash
 export INFRAI_API_KEY="your-key"
@@ -47,9 +47,9 @@ The response makes the decision visible:
 
 ## The grouping rule
 
-`src/nonprofit_errors.py` accepts three typed workflows: donor receipts, volunteer reminders, and campaign reports. Its fingerprint uses the workflow and operation, which groups repeated receipt-rendering failures while keeping reminder delivery and report aggregation separate. Organization context stays available for triage but does not split the group.
+`src/nonprofit_errors.py` accepts three typed workflows: donor receipts, volunteer reminders, and campaign reports. Its fingerprint uses the workflow and operation, which groups repeated receipt-rendering failures while keeping reminder delivery and report aggregation separate. Organization context remains available for triage but does not split the group.
 
-`src/infrai_client.py` is deliberately small. Every request carries an explicit HTTP method and Bearer authorization. It decodes the `{ok, data, error, metadata}` envelope before checking status, raises structured business rejections, and retries HTTP 429 responses with `Retry-After` or exponential delay. The caller-supplied request ID keeps a retried capture from applying twice.
+`src/infrai_client.py` is deliberately small. Every request has an explicit HTTP method and Bearer authorization. It decodes the `{ok, data, error, metadata}` envelope before evaluating status, raises structured business rejections, and retries HTTP 429 responses with `Retry-After` or exponential delay. The caller-provided request ID protects a retried capture from being applied twice.
 
 The service maps upstream 4xx business rejections to 4xx responses for its caller. Other transport failures become a 502 at this boundary.
 
